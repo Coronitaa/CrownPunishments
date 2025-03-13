@@ -1,0 +1,25 @@
+prefix: "&8[&6C&cP&8] &r"
+
+menu:
+  title: "&6Punishing &c{target}"
+  items:
+    info:
+      material: "PLAYER_HEAD"
+      player_head: "{target}"
+      slot: 10
+      name: "&e{target}"
+      lore:
+        - "&7Online: &f{target_online}"
+        - "&7IP: &f{target_ip}"
+        - "&7Coords: &f{target_coords}"
+        - "&7World: &f{target_world}"
+        - "%player_name%"
+        - ""
+        - "&e&oClick to change player."
+
+messages:
+  player_only: "&cThis command is for players only!"
+  invalid_player: "&cInvalid player. Usage: {usage}"
+  never_played: "&cPlayer '{input}' not found."
+  reload_success: "&aConfig reloaded successfully!"
+  no_permission: "&cYou don't have permission!"
