@@ -1,0 +1,19 @@
+name: CrownPunishments
+version: '1.0.1'
+main: cp.corona.crownpunishments.CrownPunishments
+api-version: '1.18'
+softdepend: [PlaceholderAPI]
+
+commands:
+  crown:
+    description: Main command of the plugin
+    aliases:
+      - cp
+    usage: /crown <punish|reload|help>
+permissions:
+  crown.command:
+    description: Allows access to /crown commands
+    default: op
+  crown.admin:
+    description: Allows reloading the plugin
+    default: op
