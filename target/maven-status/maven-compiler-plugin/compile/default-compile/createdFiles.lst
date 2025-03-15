@@ -1,0 +1,4 @@
+cp\corona\config\CustomConfig.class
+cp\corona\menus\TimeSelectorMenu.class
+cp\corona\config\MainConfigManager.class
+cp\corona\crownpunishments\CrownPunishments.class
