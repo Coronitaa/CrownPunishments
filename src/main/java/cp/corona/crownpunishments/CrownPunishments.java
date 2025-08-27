@@ -6,14 +6,14 @@ import cp.corona.commands.MainCommand;
 import cp.corona.config.MainConfigManager;
 import cp.corona.database.SoftBanDatabaseManager;
 import cp.corona.listeners.CommandBlockerListener;
-import cp.corona.listeners.FreezeListener; // Import FreezeListener - NEW
+import cp.corona.listeners.FreezeListener;
 import cp.corona.listeners.MenuListener;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.HashMap; // Import HashMap - NEW
+import java.util.HashMap;
 import java.util.UUID;
 import java.util.logging.Level;
 
@@ -24,11 +24,11 @@ import java.util.logging.Level;
 public final class CrownPunishments extends JavaPlugin {
     private final String version = getDescription().getVersion();
     private MainConfigManager configManager;
-    private SoftBanDatabaseManager softBanDatabaseManager; // Database Manager
+    private SoftBanDatabaseManager softBanDatabaseManager;
     private boolean placeholderAPIEnabled;
-    private final HashMap<UUID, Boolean> pluginFrozenPlayers = new HashMap<>(); // Track frozen players - NEW
+    private final HashMap<UUID, Boolean> pluginFrozenPlayers = new HashMap<>();
 
-    private MenuListener menuListener; // Add MenuListener field
+    private MenuListener menuListener;
     private FreezeListener freezeListener;
 
     /**

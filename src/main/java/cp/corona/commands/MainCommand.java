@@ -176,13 +176,11 @@ public class MainCommand implements CommandExecutor, TabCompleter {
      */
     private boolean handlePunishCommand(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) {
-            if (args.length < 2) { // Console needs at least <target> <type> for direct punishment
+            if (args.length < 2) {
                 sendConfigMessage(sender, "messages.player_only_console_punish");
-                return true; // Changed to true as message is sent
+                return true;
             }
         }
-        // Note: The global USE_PERMISSION check handles general access.
-        // Specific permissions for punish types are checked deeper.
 
         if (args.length == 0) {
             help(sender);
@@ -199,11 +197,9 @@ public class MainCommand implements CommandExecutor, TabCompleter {
 
         if (args.length == 1) {
             if (!(sender instanceof Player)) {
-                sendConfigMessage(sender, "messages.player_only"); // Console needs more args to open menu (not possible)
+                sendConfigMessage(sender, "messages.player_only");
                 return true;
             }
-            // Permission for punish menu itself is covered by global USE_PERMISSION.
-            // Specific punish type permissions are checked when opening details or direct punishing.
             new PunishMenu(target.getUniqueId(), plugin).open((Player) sender);
         } else if (args.length >= 2) {
             String punishType = args[1].toLowerCase();
@@ -212,41 +208,29 @@ public class MainCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            if (args.length == 2) { // Open details menu
-                if (!(sender instanceof Player)) {
-                    sendConfigMessage(sender, "messages.player_only");
-                    return true;
-                }
-                // Check permission to open this specific details menu
-                if (!checkPunishDetailsPermission(sender, punishType)) {
-                    sendNoPermissionDetailsMessage(sender, punishType);
-                    return true;
-                }
-                new PunishDetailsMenu(target.getUniqueId(), plugin, punishType).open((Player) sender);
-            } else { // Direct punishment: args.length >= 3
-                // Check permission for direct command usage of this punishment type
-                if (!checkPunishCommandPermission(sender, punishType)) {
-                    sendNoPermissionCommandMessage(sender, punishType);
-                    return true;
-                }
-                // Time is arg 2 for ban, mute, softban. Reason starts after time or after type.
-                String timeForPunishment = "permanent"; // Default
-                String reason;
+            // Always allow direct punishment without opening menu
+            if (!checkPunishCommandPermission(sender, punishType)) {
+                sendNoPermissionCommandMessage(sender, punishType);
+                return true;
+            }
+            String timeForPunishment = "permanent";
+            String reason;
 
-                if (punishType.equalsIgnoreCase("ban") || punishType.equalsIgnoreCase("mute") || punishType.equalsIgnoreCase("softban")) {
-                    if (args.length < 3) { // <target> <type> needs <time>
-                        sendConfigMessage(sender, "messages.unpunish_usage", "{usage}", "/" + (sender instanceof Player ? "punish" : "crown punish") + " " + targetName + " " + punishType + " <time> [reason]");
-                        return true;
-                    }
+            if (punishType.equalsIgnoreCase("ban") || punishType.equalsIgnoreCase("mute") || punishType.equalsIgnoreCase("softban")) {
+                if (args.length < 3) {
+                    timeForPunishment = "permanent"; // Default time
+                    reason = "No reason specified.";
+                } else {
                     timeForPunishment = args[2];
                     reason = (args.length > 3) ? String.join(" ", Arrays.copyOfRange(args, 3, args.length)) : "No reason specified.";
-                } else { // kick, warn, freeze
-                    reason = (args.length > 2) ? String.join(" ", Arrays.copyOfRange(args, 2, args.length)) : "No reason specified.";
                 }
-
-                if (plugin.getConfigManager().isDebugEnabled()) plugin.getLogger().info("[MainCommand] Direct punishment confirmed for " + target.getName() + ", type: " + punishType);
-                confirmDirectPunishment(sender, target, punishType, timeForPunishment, reason);
+            } else {
+                reason = (args.length > 2) ? String.join(" ", Arrays.copyOfRange(args, 2, args.length)) : "No reason specified.";
             }
+
+            if (plugin.getConfigManager().isDebugEnabled()) plugin.getLogger().info("[MainCommand] Direct punishment confirmed for " + target.getName() + ", type: " + punishType);
+            confirmDirectPunishment(sender, target, punishType, timeForPunishment, reason);
+
         }
         return true;
     }

@@ -137,6 +137,7 @@ placeholders:
   display_yes: "&a✔"          # Symbol used for 'true'/'online' status.
   display_no: "&c❌"           # Symbol used for 'false'/'offline' status.
   not_set: '&c❌ Not Set'     # Text used in menus when time/reason is not yet set.
+  optional_not_set: '&e❌ Not set' # Text used in menus when reason is not yet set.
   set: '&a✔ Set'             # Text used in menus when time/reason has been set.
   permanent_time_display: 'Permanent' # Text used to display a permanent duration.
 
@@ -154,7 +155,7 @@ placeholders:
     # Add un-types if you want to display them differently for unpunishment logs/messages
     unban: "Unban"
     unmute: "Unmute"
-    unwarn: "Unwarn Removal"
+    unwarn: "Unwarn"
     unsoftban: "Softban Removal"
     unfreeze: "Unfreeze"
 
