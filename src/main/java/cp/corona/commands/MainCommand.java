@@ -10,6 +10,7 @@ import cp.corona.utils.TimeUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
+import org.bukkit.command.CommandException;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
@@ -19,25 +20,6 @@ import org.bukkit.util.StringUtil;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * ////////////////////////////////////////////////
- * //             CrownPunishments             //
- * //         Developed with passion by         //
- * //                   Corona                 //
- * ////////////////////////////////////////////////
- *
- * Handles the main command and subcommands for the CrownPunishments plugin.
- * Implements CommandExecutor and TabCompleter for command handling and tab completion,
- * treating /crown, /punish, /softban, and /unpunish as COMPLETELY SEPARATE top-level commands.
- * This version includes robust input validation for time arguments and a correction for the softban time calculation bug.
- * Top-level /softban and /unpunish commands are now fully separate, and /punish mirrors /crown punish.
- *
- * **NEW:** Added handling for the "freeze" punishment type.
- * **MODIFIED:** Integrated calls to execute post-action hooks after punishment/unpunishment.
- * **MODIFIED:** Added a global 'crown.use' permission check at the beginning of onCommand and onTabComplete.
- *              If the sender lacks this permission, no command execution or tab suggestions will be provided
- *              for any of the plugin's commands.
- */
 public class MainCommand implements CommandExecutor, TabCompleter {
     private final CrownPunishments plugin;
 
@@ -63,42 +45,22 @@ public class MainCommand implements CommandExecutor, TabCompleter {
     private static final String UNPUNISH_FREEZE_PERMISSION = "crown.unpunish.freeze";
     private static final List<String> PUNISHMENT_TYPES = Arrays.asList("ban", "mute", "softban", "kick", "warn", "freeze");
     private static final List<String> UNPUNISHMENT_TYPES = Arrays.asList("ban", "mute", "softban", "warn", "freeze");
+    private static final List<String> PLUGIN_COMMANDS = Arrays.asList("crown", "punish", "unpunish", "softban", "freeze");
 
 
-    /**
-     * Constructor for MainCommand.
-     * @param plugin Instance of the main plugin class.
-     */
     public MainCommand(CrownPunishments plugin) {
         this.plugin = plugin;
     }
 
-    /**
-     * Executes commands when players type them in-game.
-     * **NEW:** A global 'crown.use' permission check is performed at the beginning.
-     *          If the sender lacks this permission, a "no permission" message is sent,
-     *          and no further command processing occurs for any plugin command.
-     */
     @Override
     public boolean onCommand(CommandSender sender, Command command, String alias, String[] args) {
-        //
-        // Global Permission Check: 'crown.use'
-        // --------------------------------------------------------------------
-        // If the sender does not have the base 'crown.use' permission,
-        // they are denied access to ALL commands handled by this plugin.
-        // A generic "no permission" message is sent, and the command is
-        // considered handled (by being denied). This prevents leaking command
-        // existence or functionality to unauthorized users.
-        // --------------------------------------------------------------------
         if (!sender.hasPermission(USE_PERMISSION)) {
-            sendConfigMessage(sender, "messages.no_permission_command"); // Generic no permission message
-            return true; // Command handled (by denying access)
+            sendConfigMessage(sender, "messages.no_permission_command");
+            return true;
         }
 
-        // Handling for /crown command and its subcommands
         if (alias.equalsIgnoreCase("crown")) {
-            // No USE_PERMISSION check needed here, already done globally
-            if (args.length == 0) { // /crown with no arguments: show help
+            if (args.length == 0) {
                 help(sender);
                 return true;
             }
@@ -110,54 +72,43 @@ public class MainCommand implements CommandExecutor, TabCompleter {
                 case PUNISH_SUBCOMMAND:
                     return handlePunishCommand(sender, Arrays.copyOfRange(args, 1, args.length));
                 case UNPUNISH_SUBCOMMAND:
-                    return handleUnpunishCommand(sender, Arrays.copyOfRange(args, 1, args.length));
+                    return handleUnpunishCommand(sender, args);
                 case HELP_SUBCOMMAND:
                     help(sender);
                     return true;
                 default:
-                    help(sender); // Show help for invalid subcommands
+                    help(sender);
                     return true;
             }
         }
 
-        // Handling for /punish command (alias for /crown punish)
         if (alias.equalsIgnoreCase("punish")) {
-            // No USE_PERMISSION check needed here
             return handlePunishCommand(sender, args);
         }
 
-        // Handling for /unpunish command as a SEPARATE top-level command
         if (alias.equalsIgnoreCase("unpunish")) {
-            // No USE_PERMISSION check needed here
             return handleUnpunishCommand(sender, args);
         }
 
-        // Handling for /softban command as a SEPARATE top-level command
         if (alias.equalsIgnoreCase("softban")) {
-            // No USE_PERMISSION check needed here
             return handleSoftbanCommand(sender, args);
         }
 
-        // Handling for /freeze command as a SEPARATE top-level command
         if (alias.equalsIgnoreCase("freeze")) {
-            // No USE_PERMISSION check needed here
             return handleFreezeCommand(sender, args);
         }
 
-        return false; // Command or alias not handled by this executor
+        return false;
     }
 
+    private boolean isPluginCommand(String command) {
+        String baseCommand = command.split(" ")[0].toLowerCase();
+        return PLUGIN_COMMANDS.contains(baseCommand);
+    }
 
-    /**
-     * Handles the reload subcommand to reload plugin configurations.
-     * Checks for admin permission before reloading.
-     *
-     * @param sender CommandSender who sent the command.
-     * @return true if the command was handled successfully.
-     */
     private boolean handleReloadCommand(CommandSender sender) {
-        if (!sender.hasPermission(ADMIN_PERMISSION)) { // Specific permission for reload
-            sendConfigMessage(sender, "messages.no_permission"); // Use specific 'no_permission' as this is for an admin action
+        if (!sender.hasPermission(ADMIN_PERMISSION)) {
+            sendConfigMessage(sender, "messages.no_permission");
             return true;
         }
         plugin.getConfigManager().loadConfig();
@@ -165,15 +116,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    /**
-     * Handles the punish subcommand, opening the punishment menu or executing direct punishment.
-     * Accessible via /crown punish ... or /punish ... (alias).
-     * The base 'crown.use' permission is already checked before this method is called.
-     *
-     * @param sender CommandSender who sent the command.
-     * @param args Command arguments.
-     * @return true if the command was handled successfully.
-     */
     private boolean handlePunishCommand(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) {
             if (args.length < 2) {
@@ -188,6 +130,10 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         }
 
         String targetName = args[0];
+        if (targetName.length() < 3 || targetName.length() > 16) {
+            sendConfigMessage(sender, "messages.invalid_player_name", "{input}", targetName);
+            return true;
+        }
         OfflinePlayer target = Bukkit.getOfflinePlayer(targetName);
 
         if (!target.hasPlayedBefore() && !target.isOnline()) {
@@ -208,7 +154,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            // Always allow direct punishment without opening menu
             if (!checkPunishCommandPermission(sender, punishType)) {
                 sendNoPermissionCommandMessage(sender, punishType);
                 return true;
@@ -218,7 +163,7 @@ public class MainCommand implements CommandExecutor, TabCompleter {
 
             if (punishType.equalsIgnoreCase("ban") || punishType.equalsIgnoreCase("mute") || punishType.equalsIgnoreCase("softban")) {
                 if (args.length < 3) {
-                    timeForPunishment = "permanent"; // Default time
+                    timeForPunishment = "permanent";
                     reason = "No reason specified.";
                 } else {
                     timeForPunishment = args[2];
@@ -235,29 +180,24 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    /**
-     * Handles the unpunish command, removing a punishment from a player.
-     * The base 'crown.use' permission is already checked.
-     *
-     * @param sender CommandSender who sent the command.
-     * @param args Command arguments.
-     * @return true if the command was handled successfully.
-     */
     private boolean handleUnpunishCommand(CommandSender sender, String[] args) {
-        // Base USE_PERMISSION already checked globally.
 
         if (args.length == 0) {
             help(sender);
             return true;
         }
 
-        if (args.length < 2) { // /unpunish <player> <type> is minimum required
-            String commandLabel = (sender instanceof Player) ? "unpunish" : "crown unpunish"; // Adjust based on context
+        if (args.length < 2) {
+            String commandLabel = (sender instanceof Player) ? "unpunish" : "crown unpunish";
             sendConfigMessage(sender, "messages.unpunish_usage", "{usage}", "/" + commandLabel + " <player> <type>");
             return true;
         }
 
         String targetName = args[0];
+        if (targetName.length() < 3 || targetName.length() > 16) {
+            sendConfigMessage(sender, "messages.invalid_player_name", "{input}", targetName);
+            return true;
+        }
         String punishType = args[1].toLowerCase();
 
         if (!UNPUNISHMENT_TYPES.contains(punishType)) {
@@ -265,7 +205,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        // Check permission for this specific unpunish type
         if (!checkUnpunishPermission(sender, punishType)) {
             sendNoPermissionUnpunishMessage(sender, punishType);
             return true;
@@ -281,16 +220,7 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    /**
-     * Handles the softban command, directly executing a softban punishment.
-     * The base 'crown.use' permission is already checked.
-     *
-     * @param sender CommandSender who sent the command.
-     * @param args Command arguments for /softban (player, time, reason...).
-     * @return true if the command was handled successfully.
-     */
     private boolean handleSoftbanCommand(CommandSender sender, String[] args) {
-        // Base USE_PERMISSION already checked. Now check specific softban permission.
         if (!sender.hasPermission(PUNISH_SOFTBAN_PERMISSION)) {
             sendConfigMessage(sender, "messages.no_permission_punish_command_type", "{punishment_type}", "softban");
             return true;
@@ -302,6 +232,10 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         }
 
         String targetName = args[0];
+        if (targetName.length() < 3 || targetName.length() > 16) {
+            sendConfigMessage(sender, "messages.invalid_player_name", "{input}", targetName);
+            return true;
+        }
         OfflinePlayer target = Bukkit.getOfflinePlayer(targetName);
 
         if (!target.hasPlayedBefore() && !target.isOnline()) {
@@ -309,7 +243,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        // Bypass check: specific to softban
         if (target instanceof Player && ((Player) target).hasPermission("crown.bypass.softban")) {
             sendConfigMessage(sender, "messages.bypass_error_softban", "{target}", targetName);
             return true;
@@ -322,7 +255,7 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             time = args[1];
             if (TimeUtils.parseTime(time, plugin.getConfigManager()) == 0 && !time.equalsIgnoreCase("permanent") && !time.equalsIgnoreCase(plugin.getConfigManager().getMessage("placeholders.permanent_time_display"))) {
                 sendConfigMessage(sender, "messages.invalid_time_format_command", "{input}", time);
-                return true; // Changed to true as message is sent
+                return true;
             }
         }
         if (args.length >= 3) {
@@ -333,16 +266,7 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    /**
-     * Handles the freeze command, directly executing a freeze punishment.
-     * The base 'crown.use' permission is already checked.
-     *
-     * @param sender CommandSender who sent the command.
-     * @param args Command arguments for /freeze (player, reason...).
-     * @return true if the command was handled successfully.
-     */
     private boolean handleFreezeCommand(CommandSender sender, String[] args) {
-        // Base USE_PERMISSION already checked. Now check specific freeze permission.
         if (!sender.hasPermission(PUNISH_FREEZE_PERMISSION)) {
             sendConfigMessage(sender, "messages.no_permission_punish_command_type", "{punishment_type}", "freeze");
             return true;
@@ -354,6 +278,10 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         }
 
         String targetName = args[0];
+        if (targetName.length() < 3 || targetName.length() > 16) {
+            sendConfigMessage(sender, "messages.invalid_player_name", "{input}", targetName);
+            return true;
+        }
         OfflinePlayer target = Bukkit.getOfflinePlayer(targetName);
 
         if (!target.hasPlayedBefore() && !target.isOnline()) {
@@ -361,7 +289,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        // Bypass check: specific to freeze
         if (target instanceof Player && ((Player) target).hasPermission("crown.bypass.freeze")) {
             sendConfigMessage(sender, "messages.bypass_error_freeze", "{target}", targetName);
             return true;
@@ -381,24 +308,9 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-
-    /**
-     * Confirms and executes a direct punishment command (ban, mute, softban, kick, warn, freeze).
-     * Includes bypass checks.
-     * **MODIFIED:** Executes post-punishment hooks after completion.
-     *
-     * @param sender Command sender.
-     * @param target Target player.
-     * @param punishType Type of punishment (lowercase).
-     * @param time Punishment time string.
-     * @param reason Punishment reason.
-     */
     private void confirmDirectPunishment(final CommandSender sender, final OfflinePlayer target, final String punishType, final String time, final String reason) {
-        // Bypass check moved here - MODIFIED
         if (target instanceof Player) {
             Player playerTarget = (Player) target;
-            // Combine permission check with bypass check for clarity
-            // The sender's permission for the specific punishType is already checked by the handle<PunishType>Command methods
             if (punishType.equalsIgnoreCase("softban") && playerTarget.hasPermission("crown.bypass.softban")) {
                 sendConfigMessage(sender, "messages.bypass_error_softban", "{target}", target.getName()); return;
             }
@@ -503,11 +415,24 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         }
 
         if (!handledInternally && !commandToExecute.isEmpty()) {
+            if (isPluginCommand(commandToExecute)) {
+                sendConfigMessage(sender, "messages.command_loop_error");
+                return;
+            }
             final String finalCommandToExecute = commandToExecute;
             final long finalPunishmentEndTime = punishmentEndTime;
             final String finalDurationForLog = durationForLog;
 
-            Bukkit.getScheduler().runTask(plugin, () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommandToExecute));
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                try {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommandToExecute);
+                } catch (CommandException e) {
+                    sendConfigMessage(sender, "messages.command_execution_error", "{command}", finalCommandToExecute);
+                    plugin.getLogger().severe("Failed to execute command: " + finalCommandToExecute);
+                    e.printStackTrace();
+                }
+            });
+
             sendConfigMessage(sender, "messages.direct_punishment_confirmed",
                     "{target}", target.getName(),
                     "{time}", finalDurationForLog,
@@ -530,14 +455,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
     }
 
 
-    /**
-     * Confirms and executes a direct unpunish command (unban, unmute, unsoftban, unwarn, unfreeze).
-     * **MODIFIED:** Executes post-unpunishment hooks after completion.
-     *
-     * @param sender Command sender.
-     * @param target Target player.
-     * @param punishType Type of punishment to remove (lowercase).
-     */
     private void confirmDirectUnpunish(final CommandSender sender, final OfflinePlayer target, final String punishType) {
         String commandToExecute = "";
         boolean handledInternally = false;
@@ -593,8 +510,20 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         }
 
         if (!handledInternally && !commandToExecute.isEmpty()) {
+            if (isPluginCommand(commandToExecute)) {
+                sendConfigMessage(sender, "messages.command_loop_error");
+                return;
+            }
             final String finalCommandToExecute = commandToExecute;
-            Bukkit.getScheduler().runTask(plugin, () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommandToExecute));
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                try {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommandToExecute);
+                } catch (CommandException e) {
+                    sendConfigMessage(sender, "messages.command_execution_error", "{command}", finalCommandToExecute);
+                    plugin.getLogger().severe("Failed to execute command: " + finalCommandToExecute);
+                    e.printStackTrace();
+                }
+            });
             sendConfigMessage(sender, "messages.direct_unpunishment_confirmed",
                     "{target}", target.getName(),
                     "{punishment_type}", punishType);
@@ -615,37 +544,19 @@ public class MainCommand implements CommandExecutor, TabCompleter {
     }
 
 
-    /**
-     * Sends a message from the configuration to the command sender, with optional replacements.
-     * @param sender Command sender.
-     * @param path Path to the message in messages.yml.
-     * @param replacements Placeholders to replace in the message.
-     */
     private void sendConfigMessage(CommandSender sender, String path, String... replacements) {
         String message = plugin.getConfigManager().getMessage(path, replacements);
         sender.sendMessage(MessageUtils.getColorMessage(message));
     }
 
-    /**
-     * Provides tab completion options for commands.
-     * **NEW:** If the sender lacks the 'crown.use' permission, no suggestions are provided.
-     */
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        //
-        // Global Permission Check for Tab Completion
-        // --------------------------------------------------------------------
-        // If the sender does not have the base 'crown.use' permission,
-        // do not provide any tab completion suggestions for any plugin commands.
-        // This prevents leaking command structure or subcommands.
-        // --------------------------------------------------------------------
         if (!sender.hasPermission(USE_PERMISSION)) {
-            return Collections.emptyList(); // No suggestions
+            return Collections.emptyList();
         }
 
         List<String> completions = new ArrayList<>();
 
-        // Tab completion for /crown command and its subcommands
         if (alias.equalsIgnoreCase("crown")) {
             if (args.length == 1) {
                 StringUtil.copyPartialMatches(args[0], Arrays.asList(PUNISH_SUBCOMMAND, UNPUNISH_SUBCOMMAND, HELP_SUBCOMMAND, RELOAD_SUBCOMMAND), completions);
@@ -667,7 +578,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        // Tab completion for /punish command (alias)
         if (alias.equalsIgnoreCase("punish")) {
             if (args.length == 1) {
                 StringUtil.copyPartialMatches(args[0], Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()), completions);
@@ -683,7 +593,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        // Tab completion for /unpunish command
         if (alias.equalsIgnoreCase("unpunish")) {
             if (args.length == 1) {
                 StringUtil.copyPartialMatches(args[0], Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()), completions);
@@ -692,7 +601,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        // Tab completion for /softban command
         if (alias.equalsIgnoreCase("softban")) {
             if (args.length == 1) {
                 StringUtil.copyPartialMatches(args[0], Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()), completions);
@@ -703,7 +611,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        // Tab completion for /freeze command
         if (alias.equalsIgnoreCase("freeze")) {
             if (args.length == 1) {
                 StringUtil.copyPartialMatches(args[0], Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()), completions);
@@ -716,16 +623,7 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         return completions;
     }
 
-    /**
-     * Checks if the sender has permission to access punish details menu for a specific punishment type.
-     * The base 'crown.use' permission is implicitly required to reach this point.
-     * @param sender Command sender.
-     * @param punishType Punishment type.
-     * @return true if has permission, false otherwise.
-     */
     private boolean checkPunishDetailsPermission(CommandSender sender, String punishType) {
-        // The global USE_PERMISSION check in onCommand already covers base access.
-        // This method checks for the *specific* type permission.
         switch (punishType.toLowerCase()) {
             case "ban": return sender.hasPermission(PUNISH_BAN_PERMISSION);
             case "mute": return sender.hasPermission(PUNISH_MUTE_PERMISSION);
@@ -737,33 +635,15 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /**
-     * Sends a no permission message for unpunish command based on punishment type.
-     * @param sender Command sender.
-     * @param punishType Punishment type.
-     */
     private void sendNoPermissionUnpunishMessage(CommandSender sender, String punishType) {
         sendConfigMessage(sender, "messages.no_permission_unpunish_command_type", "{punishment_type}", punishType);
     }
 
-    /**
-     * Sends a no permission message for direct punish command based on punishment type.
-     * @param sender Command sender.
-     * @param punishType Punishment type.
-     */
     private void sendNoPermissionCommandMessage(CommandSender sender, String punishType) {
         sendConfigMessage(sender, "messages.no_permission_punish_command_type", "{punishment_type}", punishType);
     }
 
-    /**
-     * Checks if the sender has permission to use unpunish command for a specific punishment type.
-     * The base 'crown.use' permission is implicitly required.
-     * @param sender CommandSender.
-     * @param punishType Punishment type.
-     * @return true if has permission, false otherwise.
-     */
     private boolean checkUnpunishPermission(CommandSender sender, String punishType) {
-        // Base USE_PERMISSION is already handled globally.
         switch (punishType.toLowerCase()) {
             case "ban": return sender.hasPermission(UNPUNISH_BAN_PERMISSION);
             case "mute": return sender.hasPermission(UNPUNISH_MUTE_PERMISSION);
@@ -774,25 +654,11 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /**
-     * Sends a no permission message for punish details menu based on punishment type.
-     * @param sender Command sender.
-     * @param punishType Punishment type.
-     */
     private void sendNoPermissionDetailsMessage(CommandSender sender, String punishType) {
         sendConfigMessage(sender, "messages.no_permission_details_menu", "{punishment_type}", punishType);
     }
 
-
-    /**
-     * Checks if the sender has permission to use direct punish command for a specific punishment type.
-     * The base 'crown.use' permission is implicitly required.
-     * @param sender CommandSender.
-     * @param punishType Punishment type.
-     * @return true if has permission, false otherwise.
-     */
     private boolean checkPunishCommandPermission(CommandSender sender, String punishType) {
-        // Base USE_PERMISSION is already handled globally.
         switch (punishType.toLowerCase()) {
             case "ban": return sender.hasPermission(PUNISH_BAN_PERMISSION);
             case "mute": return sender.hasPermission(PUNISH_MUTE_PERMISSION);
@@ -804,12 +670,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /**
-     * Sends the help message to the command sender.
-     * Retrieves help messages from messages.yml for customization and sends them to the sender.
-     *
-     * @param sender CommandSender to send the help message to.
-     */
     private void help(CommandSender sender) {
         sender.sendMessage(MessageUtils.getColorMessage(plugin.getConfigManager().getMessage("messages.help_header")));
         sender.sendMessage(MessageUtils.getColorMessage(plugin.getConfigManager().getMessage("messages.help_punish")));
@@ -819,7 +679,6 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(MessageUtils.getColorMessage(plugin.getConfigManager().getMessage("messages.help_unpunish_alias")));
         sender.sendMessage(MessageUtils.getColorMessage(plugin.getConfigManager().getMessage("messages.help_softban_command")));
         sender.sendMessage(MessageUtils.getColorMessage(plugin.getConfigManager().getMessage("messages.help_freeze_command")));
-        // Only show reload help if they have admin permission
         if (sender.hasPermission(ADMIN_PERMISSION)) {
             sender.sendMessage(MessageUtils.getColorMessage(plugin.getConfigManager().getMessage("messages.help_reload")));
         }
